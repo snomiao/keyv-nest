@@ -1,6 +1,6 @@
 {
   "name": "keyv-nest",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Nest multi-level keyv caches, boost user-experiences",
   "keywords": [],
   "homepage": "https://github.com/snomiao/keyv-nest#readme",
