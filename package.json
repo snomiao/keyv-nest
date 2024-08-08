@@ -1,6 +1,6 @@
 {
   "name": "keyv-nest",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Nest multi-level keyv caches, boost user-experiences",
   "keywords": [],
   "homepage": "https://github.com/snomiao/keyv-nest#readme",
@@ -17,7 +17,7 @@
     "import": "./dist/index.js",
     "types": "./dist/index.d.ts"
   },
-  "main": "index.js",
+  "main": "./dist/index.js",
   "module": "index.ts",
   "types": "./dist/index.d.ts",
   "files": [
