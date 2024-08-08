@@ -1,9 +1,10 @@
 // Type definition for the adapter
+type Awaitable<T> = Promise<T> | T;
 export interface KeyvNestStore<T> {
-  get(key: string): Promise<T>;
-  set(key: string, value: T, ...rest: any[]): Promise<any>;
-  delete(key: string): Promise<any>;
-  clear(): Promise<any>;
+  get(key: string): Awaitable<T>;
+  set(key: string, value: T, ...rest: any[]): Awaitable<any>;
+  delete(key: string): Awaitable<any>;
+  clear(): Awaitable<any>;
 }
 /**
  *
@@ -11,14 +12,11 @@ export interface KeyvNestStore<T> {
 export default function KeyvNest<T>(
   /** memory cache */
   cache: KeyvNestStore<T>,
-  /** disk cache */
-  store: KeyvNestStore<T>,
-  /** network cache */
-  ...rest: KeyvNestStore<T>[]
+  /** disk cache, network cache, ...etc */
+  ...stores: KeyvNestStore<T>[]
 ): KeyvNestStore<T> {
-  const _store = !rest.length
-    ? store
-    : KeyvNest(store, rest[0], ...rest.slice(1));
+  if (!stores.length) return cache;
+  const _store = KeyvNest(stores[0], ...stores.slice(1));
   return {
     ...cache,
     async get(key: string) {
