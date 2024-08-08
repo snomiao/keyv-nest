@@ -40,6 +40,34 @@ const nestedCache = KeyvNest(memoryCache, diskCache, networkCache);
 })();
 ```
 
+### Example2
+
+```typescript
+export const store = (g.store ??= KeyvNest(
+  {
+    get: (key) => console.log("kv.get " + key),
+    set: (key, v) => console.log("kv.set " + key),
+    delete: () => console.log("kv.delete"),
+    clear: () => console.log("kv.clear"),
+  },
+  new QuickLRU({ maxSize: 1000 }),
+  new KeyvDirStore("./.cache/" + collection),
+  new KeyvMongo(MONGODB_URI, { collection })
+));
+
+export const kv = new Keyv<any>({ store, ttl: enhancedMs("4w") });
+export const kv1m = new Keyv<unknown>({ store, ttl: enhancedMs("1m") });
+export const kv1d = new Keyv<unknown>({ store, ttl: enhancedMs("1d") });
+export const kv1w = new Keyv<unknown>({ store, ttl: enhancedMs("1w") });
+export const kv1y = new Keyv<unknown>({ store, ttl: enhancedMs("1y") });
+
+export const cache1m = KeyvCachedWith(kv1m);
+export const cache1d = KeyvCachedWith(kv1d);
+export const cache1w = KeyvCachedWith(kv1w);
+export const cache1y = KeyvCachedWith(kv1y);
+```
+
+
 ## API
 
 ### KeyvNest
