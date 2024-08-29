@@ -10,9 +10,9 @@ export interface KeyvNestStore<T> {
  *
  */
 export default function KeyvNest<T>(
-  /** memory cache */
+  /** memory cache, should be fastest */
   cache: KeyvNestStore<T>,
-  /** disk cache, network cache, ...etc */
+  /** disk cache, network cache, ...etc, could be slower */
   ...stores: KeyvNestStore<T>[]
 ): KeyvNestStore<T> {
   if (!stores.length) return cache;
