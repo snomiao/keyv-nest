@@ -24,7 +24,7 @@ export default function KeyvNest<T>(
       if (cached) return cached;
 
       const stored = await _store.get(key);
-      if (stored) cache.set(key, stored);
+      if (stored) await cache.set(key, stored);
       return stored;
     },
     async set(key: string, value: any, ...options: any[]) {
