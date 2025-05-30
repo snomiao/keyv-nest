@@ -42,6 +42,8 @@ const nestedCache = KeyvNest(memoryCache, diskCache, networkCache);
 
 ### Example2
 
+You can also use this as store
+
 ```typescript
 export const store = (g.store ??= KeyvNest(
   {

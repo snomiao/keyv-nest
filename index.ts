@@ -5,6 +5,7 @@ export interface KeyvNestStore<T> {
   set(key: string, value: T, ...rest: any[]): Awaitable<any>;
   delete(key: string): Awaitable<any>;
   clear(): Awaitable<any>;
+  getMany?(keys: string[]): Awaitable<T[]>;
 }
 /**
  *
@@ -38,6 +39,24 @@ export default function KeyvNest<T>(
     async clear() {
       await cache.clear();
       return _store.clear();
+    },
+    async getMany(keys: string[]) {
+      const cached = await Promise.all(keys.map((key) => cache.get(key)));
+      const missingKeys = keys.filter((_, index) => !cached[index]);
+      if (!missingKeys.length) return cached;
+
+      const getMany =
+        _store.getMany?.bind(_store) ||
+        ((keys: string[]) => Promise.all(keys.map((key) => _store.get(key))));
+      const stored = await getMany(missingKeys);
+      await Promise.all(
+        stored.map((value, index) => {
+          if (value !== undefined) {
+            return cache.set(missingKeys[index], value);
+          }
+        })
+      );
+      return [...cached, ...stored];
     },
   };
 }
