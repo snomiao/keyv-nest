@@ -111,5 +111,82 @@ describe("KeyvNest", () => {
     expect(networkCache.get).toHaveBeenCalledWith(key);
     expect(memoryCache.set).toHaveBeenCalledWith(key, fallbackValue);
   });
+
+  test("should handle writeConcern <= 0 without awaiting", async () => {
+    const key = "test";
+    const value = "value";
+
+    memoryCache.set = jest.fn().mockResolvedValue(undefined);
+    diskCache.set = jest.fn().mockResolvedValue(undefined);
+
+    const keyv = KeyvNest(memoryCache, diskCache);
+    await keyv.set(key, value, { writeConcern: 0 });
+
+    expect(memoryCache.set).toHaveBeenCalledWith(key, value, { writeConcern: 0 });
+    
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(diskCache.set).toHaveBeenCalledWith(key, value, { writeConcern: -1 });
+  });
+
+  test("should handle writeConcern = 1 by awaiting only cache", async () => {
+    const key = "test";
+    const value = "value";
+
+    memoryCache.set = jest.fn().mockResolvedValue(undefined);
+    diskCache.set = jest.fn().mockResolvedValue(undefined);
+    networkCache.set = jest.fn().mockResolvedValue(undefined);
+
+    const keyv = KeyvNest(memoryCache, diskCache, networkCache);
+    await keyv.set(key, value, { writeConcern: 1 });
+
+    expect(memoryCache.set).toHaveBeenCalledWith(key, value, { writeConcern: 1 });
+    expect(diskCache.set).toHaveBeenCalledWith(key, value, { writeConcern: 0 });
+  });
+
+  test("should handle writeConcern > 1 by decrementing for next level", async () => {
+    const key = "test";
+    const value = "value";
+
+    memoryCache.set = jest.fn().mockResolvedValue(undefined);
+    diskCache.set = jest.fn().mockResolvedValue(undefined);
+    networkCache.set = jest.fn().mockResolvedValue(undefined);
+
+    const keyv = KeyvNest(memoryCache, diskCache, networkCache);
+    await keyv.set(key, value, { writeConcern: 2 });
+
+    expect(memoryCache.set).toHaveBeenCalledWith(key, value, { writeConcern: 2 });
+    expect(diskCache.set).toHaveBeenCalledWith(key, value, { writeConcern: 1 });
+    expect(networkCache.set).toHaveBeenCalledWith(key, value, { writeConcern: 0 });
+  });
+
+  test("should handle writeConcern with multiple options", async () => {
+    const key = "test";
+    const value = "value";
+
+    memoryCache.set = jest.fn().mockResolvedValue(undefined);
+    diskCache.set = jest.fn().mockResolvedValue(undefined);
+
+    const keyv = KeyvNest(memoryCache, diskCache);
+    await keyv.set(key, value, { ttl: 1000, writeConcern: 2 });
+
+    expect(memoryCache.set).toHaveBeenCalledWith(key, value, { ttl: 1000, writeConcern: 2 });
+    expect(diskCache.set).toHaveBeenCalledWith(key, value, { ttl: 1000, writeConcern: 1 });
+  });
+
+  test("should handle writeConcern = Infinity by awaiting all levels", async () => {
+    const key = "test";
+    const value = "value";
+
+    memoryCache.set = jest.fn().mockResolvedValue(undefined);
+    diskCache.set = jest.fn().mockResolvedValue(undefined);
+    networkCache.set = jest.fn().mockResolvedValue(undefined);
+
+    const keyv = KeyvNest(memoryCache, diskCache, networkCache);
+    await keyv.set(key, value, { writeConcern: Infinity });
+
+    expect(memoryCache.set).toHaveBeenCalledWith(key, value, { writeConcern: Infinity });
+    expect(diskCache.set).toHaveBeenCalledWith(key, value, { writeConcern: Infinity });
+    expect(networkCache.set).toHaveBeenCalledWith(key, value, { writeConcern: Infinity });
+  });
 });
 

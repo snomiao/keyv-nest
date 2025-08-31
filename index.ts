@@ -29,7 +29,31 @@ export default function KeyvNest<T>(
       return stored;
     },
     async set(key: string, value: any, ...options: any[]) {
+      const writeConcern = options[0]?.writeConcern;
+      
+      if (writeConcern !== undefined && writeConcern <= 0) {
+        const nextOptions = [...options];
+        if (nextOptions[0]) {
+          nextOptions[0] = { ...nextOptions[0], writeConcern: -1 };
+        }
+        cache.set(key, value, ...options).then(() => _store.set(key, value, ...nextOptions));
+        return;
+      }
+      
       await cache.set(key, value, ...options);
+      
+      if (writeConcern !== undefined && writeConcern >= 1) {
+        const nextOptions = [...options];
+        if (nextOptions[0]) {
+          nextOptions[0] = { ...nextOptions[0], writeConcern: writeConcern - 1 };
+        }
+        if (writeConcern === 1) {
+          _store.set(key, value, ...nextOptions);
+          return;
+        }
+        return _store.set(key, value, ...nextOptions);
+      }
+      
       return _store.set(key, value, ...options);
     },
     async delete(key: string) {
