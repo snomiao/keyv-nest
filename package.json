@@ -1,6 +1,6 @@
 {
   "name": "keyv-nest",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Nest multi-level keyv caches, boost user-experiences",
   "keywords": [],
   "homepage": "https://github.com/snomiao/keyv-nest#readme",
@@ -72,7 +72,7 @@
     "@types/bun": "latest",
     "@types/jest": "^29.5.12",
     "husky": "^9.1.7",
-    "keyv": "^4.5.4",
+    "keyv": "^5.5.5",
     "semantic-release": "^24.2.5",
     "tiny-lru": "^11.2.11",
     "typescript": "^5.5.4"
