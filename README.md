@@ -1,9 +1,22 @@
 # KeyvNest
 
-`KeyvNest` is a hierarchical caching adapter for the [Keyv](https://github.com/lukechilds/keyv) module. It allows you to nest multiple caching layers, such as memory cache, disk cache, and network cache, to create a multi-layered caching mechanism.
+[![npm version](https://badge.fury.io/js/keyv-nest.svg)](https://www.npmjs.com/package/keyv-nest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+`KeyvNest` is a hierarchical caching adapter for the [Keyv](https://github.com/lukechilds/keyv) module. It allows you to nest multiple caching layers, such as memory cache, disk cache, and network cache, to create a multi-layered caching mechanism that boosts user experience by optimizing data retrieval across different storage tiers.
+
+## Features
+
+- 🚀 **Multi-layer caching**: Nest unlimited cache layers with automatic promotion
+- ⚡ **Performance optimized**: Fast reads from primary cache with automatic fallback
+- 🔄 **Write concern control**: Fine-grained control over synchronous/asynchronous writes
+- 🔌 **Keyv compatible**: Works seamlessly with any Keyv store adapter
+- 📦 **TypeScript support**: Full type definitions included
+- 🎯 **Simple API**: Easy to use and integrate
 
 ## Table of Contents
 
+- [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
 - [API](#api)
@@ -17,6 +30,12 @@ You can install the module via npm:
 
 ```sh
 npm install keyv-nest
+```
+
+Or using bun:
+
+```sh
+bun add keyv-nest
 ```
 
 ## Usage
@@ -40,9 +59,30 @@ const nestedCache = KeyvNest(memoryCache, diskCache, networkCache);
 })();
 ```
 
-### Example2
+### Advanced Example with Write Concern
 
-You can also use this as store
+KeyvNest supports write concern control to manage how data is persisted across cache layers:
+
+```typescript
+import Keyv from 'keyv';
+import KeyvNest from 'keyv-nest';
+
+const memoryCache = new Keyv({ store: new Map() });
+const diskCache = new Keyv({ store: new KeyvFileStore('/path/to/store') });
+
+const nestedCache = KeyvNest(memoryCache, diskCache);
+
+// Write concern = 0: Write to first layer only, propagate asynchronously
+await nestedCache.set('key1', 'value1', { writeConcern: 0 });
+
+// Write concern = 1: Write to first two layers, propagate rest asynchronously
+await nestedCache.set('key2', 'value2', { writeConcern: 1 });
+
+// Default: Write to all layers synchronously
+await nestedCache.set('key3', 'value3');
+```
+
+### Using KeyvNest as a Keyv Store
 
 ```typescript
 export const store = (g.store ??= KeyvNest(
@@ -91,13 +131,19 @@ Retrieves a value from the cache hierarchy. If the value is found in the primary
 - **key**: The cache key.
 - **returns**: A promise that resolves to the cached value or `undefined`.
 
-#### `set(key: string, value: T, ...rest: any[]): Promise<any>`
+#### `set(key: string, value: T, options?: number | KeyvNestOptions): Promise<any>`
 
 Sets a value in all layers of the cache hierarchy.
 
 - **key**: The cache key.
 - **value**: The value to cache.
-- **...rest**: Additional arguments for cache store set operations.
+- **options**: Optional TTL (number) or options object:
+  - **ttl**: Time-to-live in milliseconds
+  - **writeConcern**: Controls write propagation behavior:
+    - `0`: Write to first layer only, propagate asynchronously to others
+    - `1`: Write to first two layers synchronously, propagate rest asynchronously
+    - `>=2`: Write to N+1 layers synchronously
+    - `undefined` (default): Write to all layers synchronously
 - **returns**: A promise that resolves when the operation has completed.
 
 #### `delete(key: string): Promise<any>`
@@ -112,6 +158,13 @@ Deletes a value from all layers of the cache hierarchy.
 Clears all values from all layers of the cache hierarchy.
 
 - **returns**: A promise that resolves when the operation has completed.
+
+#### `getMany(keys: string[]): Promise<Array<StoredData<T | undefined>>>`
+
+Retrieves multiple values from the cache hierarchy. Missing values are fetched from deeper layers and promoted to the primary cache.
+
+- **keys**: Array of cache keys.
+- **returns**: A promise that resolves to an array of cached values.
 
 ## Examples
 

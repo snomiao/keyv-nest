@@ -2,7 +2,23 @@
   "name": "keyv-nest",
   "version": "0.0.6",
   "description": "Nest multi-level keyv caches, boost user-experiences",
-  "keywords": [],
+  "keywords": [
+    "keyv",
+    "cache",
+    "caching",
+    "nested-cache",
+    "multi-level-cache",
+    "hierarchical-cache",
+    "memory-cache",
+    "disk-cache",
+    "storage",
+    "key-value",
+    "adapter",
+    "store",
+    "lru",
+    "performance",
+    "write-concern"
+  ],
   "homepage": "https://github.com/snomiao/keyv-nest#readme",
   "bugs": {
     "url": "https://github.com/snomiao/keyv-nest/issues"
