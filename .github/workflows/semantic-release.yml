@@ -16,9 +16,9 @@ jobs:
       - run: bun i
       - run: bun run test
       - run: bun run build
-      - run: npx semantic-release
-        env:
-          # reminder to setup read/write permission for this token
-          # here: REPO_URL/settings/actions
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # - run: npx semantic-release
+      #   env:
+      #     # reminder to setup read/write permission for this token
+      #     # here: REPO_URL/settings/actions
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
