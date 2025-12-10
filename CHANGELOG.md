@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.8](https://github.com/snomiao/keyv-nest/compare/v0.0.7...v0.0.8) (2025-12-10)
+
+
+### Features
+
+* upgrade keyv to v5.5.5 and improve type definitions ([26af3bb](https://github.com/snomiao/keyv-nest/commit/26af3bbf23fb6a8fab6d6e06a8485248764413b3))
+
 ### [0.0.7](https://github.com/snomiao/keyv-nest/compare/v0.0.6...v0.0.7) (2025-12-09)
 
 ### [0.0.6](https://github.com/snomiao/keyv-nest/compare/v0.2.0...v0.0.6) (2025-12-06)

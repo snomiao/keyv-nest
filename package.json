@@ -1,6 +1,6 @@
 {
   "name": "keyv-nest",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Nest multi-level keyv caches, boost user-experiences",
   "keywords": [
     "keyv",
