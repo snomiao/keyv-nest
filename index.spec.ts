@@ -68,9 +68,9 @@ describe("KeyvNest", () => {
     const keyv = KeyvNest(memoryCache, diskCache, networkCache);
     await keyv.set(key, value);
 
-    expect(memoryCache.set).toHaveBeenCalledWith(key, value);
-    expect(diskCache.set).toHaveBeenCalledWith(key, value);
-    expect(networkCache.set).toHaveBeenCalledWith(key, value);
+    expect(memoryCache.set).toHaveBeenCalledWith(key, value, undefined);
+    expect(diskCache.set).toHaveBeenCalledWith(key, value, undefined);
+    expect(networkCache.set).toHaveBeenCalledWith(key, value, undefined);
   });
 
   test("should delete value from all caches", async () => {

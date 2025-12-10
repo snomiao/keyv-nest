@@ -1,11 +1,29 @@
+import type { KeyvStoreAdapter, StoredData } from "keyv";
+
 // Type definition for the adapter
 type Awaitable<T> = Promise<T> | T;
-export interface KeyvNestStore<T> {
-  get(key: string): Awaitable<T>;
-  set(key: string, value: T, ...rest: any[]): Awaitable<any>;
-  delete(key: string): Awaitable<any>;
-  clear(): Awaitable<any>;
-  getMany?(keys: string[]): Awaitable<T[]>;
+
+export interface KeyvNestOptions {
+  ttl?: number;
+  writeConcern?: number;
+  [key: string]: any;
+}
+
+export interface KeyvNestStore<T = any> {
+  opts?: any;
+  namespace?: string;
+  on?(event: string, listener: (...arguments_: any[]) => void): any;
+
+  get(key: string): Awaitable<StoredData<T>>;
+  set(key: string, value: any, options?: number | KeyvNestOptions): Awaitable<any>;
+  delete(key: string): Awaitable<boolean>;
+  clear(): Awaitable<void>;
+  getMany?(keys: string[]): Awaitable<Array<StoredData<T | undefined>>>;
+  setMany?(values: Array<{ key: string; value: any; ttl?: number }>): Awaitable<boolean[] | void>;
+  has?(key: string): Awaitable<boolean>;
+  hasMany?(keys: string[]): Awaitable<boolean[]>;
+  deleteMany?(keys: string[]): Awaitable<boolean>;
+  disconnect?(): Awaitable<void>;
 }
 /**
  *
@@ -28,33 +46,28 @@ export default function KeyvNest<T>(
       if (stored) await cache.set(key, stored);
       return stored;
     },
-    async set(key: string, value: any, ...options: any[]) {
-      const writeConcern = options[0]?.writeConcern;
-      
+    async set(key: string, value: any, options?: number | KeyvNestOptions) {
+      const opts = typeof options === 'number' ? { ttl: options } : options;
+      const writeConcern = opts?.writeConcern;
+
       if (writeConcern !== undefined && writeConcern <= 0) {
-        const nextOptions = [...options];
-        if (nextOptions[0]) {
-          nextOptions[0] = { ...nextOptions[0], writeConcern: -1 };
-        }
-        cache.set(key, value, ...options).then(() => _store.set(key, value, ...nextOptions));
+        const nextOptions = { ...opts, writeConcern: -1 };
+        cache.set(key, value, opts).then(() => _store.set(key, value, nextOptions));
         return;
       }
-      
-      await cache.set(key, value, ...options);
-      
+
+      await cache.set(key, value, opts);
+
       if (writeConcern !== undefined && writeConcern >= 1) {
-        const nextOptions = [...options];
-        if (nextOptions[0]) {
-          nextOptions[0] = { ...nextOptions[0], writeConcern: writeConcern - 1 };
-        }
+        const nextOptions = { ...opts, writeConcern: writeConcern - 1 };
         if (writeConcern === 1) {
-          _store.set(key, value, ...nextOptions);
+          _store.set(key, value, nextOptions);
           return;
         }
-        return _store.set(key, value, ...nextOptions);
+        return _store.set(key, value, nextOptions);
       }
-      
-      return _store.set(key, value, ...options);
+
+      return _store.set(key, value, opts);
     },
     async delete(key: string) {
       await cache.delete(key);
@@ -74,7 +87,7 @@ export default function KeyvNest<T>(
         ((keys: string[]) => Promise.all(keys.map((key) => _store.get(key))));
       const stored = await getMany(missingKeys);
       await Promise.all(
-        stored.map((value, index) => {
+        stored.map((value: StoredData<T | undefined>, index: number) => {
           if (value !== undefined) {
             return cache.set(missingKeys[index], value);
           }
