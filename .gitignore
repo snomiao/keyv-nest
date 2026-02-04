@@ -142,3 +142,8 @@ dist
 .svelte-kit
 
 # End of https://www.toptal.com/developers/gitignore/api/node
+
+# Biome (dropped in favor of oxlint+oxfmt)
+biome.json
+.biome*
+/tmp/

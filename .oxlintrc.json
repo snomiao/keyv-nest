@@ -1,0 +1,6 @@
+{
+  "rules": {
+    "typescript/unbound-method": "allow",
+    "typescript/no-misused-spread": "allow"
+  }
+}
