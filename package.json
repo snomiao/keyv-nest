@@ -48,7 +48,8 @@
     "prerelease": "bun run build && bun run test",
     "release": "bunx standard-version && git push --follow-tags && npm publish",
     "test": "bun test",
-    "prepare": "husky"
+    "prepare": "husky",
+    "fmt": "oxlint --type-aware --type-check --fix-suggestions && oxfmt"
   },
   "dependencies": {
     "@keyv/sqlite": "^3.6.7",
@@ -89,6 +90,9 @@
     "@types/jest": "^29.5.12",
     "husky": "^9.1.7",
     "keyv": "^5.5.5",
+    "oxfmt": "^0.17.0",
+    "oxlint": "^1.32.0",
+    "oxlint-tsgolint": "^0.8.5",
     "semantic-release": "^24.2.5",
     "tiny-lru": "^11.2.11",
     "typescript": "^5.5.4"
