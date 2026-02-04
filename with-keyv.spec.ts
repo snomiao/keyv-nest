@@ -1,7 +1,8 @@
+import { mkdir } from "node:fs/promises";
 import KeyvSqlite from "@keyv/sqlite";
-import { mkdir } from "fs/promises";
 import Keyv from "keyv";
 import KeyvNest from "./index";
+
 await mkdir(".cache").catch(() => null);
 const memoryCache = new Keyv({ store: new Map() });
 const diskCache = new Keyv({
@@ -66,19 +67,14 @@ it("handles errors correctly", async () => {
     ...networkCache,
     get: async (_key: string) => {
       throw new Error("Network error");
-      return "anything";
     },
-  } as typeof networkCache;
+  } as unknown as typeof networkCache;
 
-  const resilientNestedCache = KeyvNest(
-    memoryCache,
-    diskCache,
-    failingNetworkCache
-  );
+  const resilientNestedCache = KeyvNest(memoryCache, diskCache, failingNetworkCache);
 
   try {
     await resilientNestedCache.get("username");
-  } catch (error: any) {
-    console.log(error.message); // 'Network error'
+  } catch (error: unknown) {
+    console.log((error as Error).message); // 'Network error'
   }
 });

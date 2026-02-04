@@ -109,7 +109,6 @@ export const cache1w = KeyvCachedWith(kv1w);
 export const cache1y = KeyvCachedWith(kv1y);
 ```
 
-
 ## API
 
 ### KeyvNest

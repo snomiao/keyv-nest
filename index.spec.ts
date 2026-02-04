@@ -4,9 +4,9 @@
 import KeyvNest, { type KeyvNestStore } from "./index"; // assuming index.ts is the file you shared
 
 describe("KeyvNest", () => {
-  let memoryCache: KeyvNestStore<any>;
-  let diskCache: KeyvNestStore<any>;
-  let networkCache: KeyvNestStore<any>;
+  let memoryCache: KeyvNestStore<unknown>;
+  let diskCache: KeyvNestStore<unknown>;
+  let networkCache: KeyvNestStore<unknown>;
 
   beforeEach(() => {
     memoryCache = {
@@ -95,7 +95,7 @@ describe("KeyvNest", () => {
 
   test("should fallback in correct cascade order", async () => {
     const key = "test";
-    const value = "value";
+    const _value = "value";
     const fallbackValue = "fallbackValue";
 
     memoryCache.get = jest.fn().mockResolvedValue(null);
@@ -122,10 +122,14 @@ describe("KeyvNest", () => {
     const keyv = KeyvNest(memoryCache, diskCache);
     await keyv.set(key, value, { writeConcern: 0 });
 
-    expect(memoryCache.set).toHaveBeenCalledWith(key, value, { writeConcern: 0 });
-    
-    await new Promise(resolve => setTimeout(resolve, 10));
-    expect(diskCache.set).toHaveBeenCalledWith(key, value, { writeConcern: -1 });
+    expect(memoryCache.set).toHaveBeenCalledWith(key, value, {
+      writeConcern: 0,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(diskCache.set).toHaveBeenCalledWith(key, value, {
+      writeConcern: -1,
+    });
   });
 
   test("should handle writeConcern = 1 by awaiting only cache", async () => {
@@ -139,7 +143,9 @@ describe("KeyvNest", () => {
     const keyv = KeyvNest(memoryCache, diskCache, networkCache);
     await keyv.set(key, value, { writeConcern: 1 });
 
-    expect(memoryCache.set).toHaveBeenCalledWith(key, value, { writeConcern: 1 });
+    expect(memoryCache.set).toHaveBeenCalledWith(key, value, {
+      writeConcern: 1,
+    });
     expect(diskCache.set).toHaveBeenCalledWith(key, value, { writeConcern: 0 });
   });
 
@@ -154,9 +160,13 @@ describe("KeyvNest", () => {
     const keyv = KeyvNest(memoryCache, diskCache, networkCache);
     await keyv.set(key, value, { writeConcern: 2 });
 
-    expect(memoryCache.set).toHaveBeenCalledWith(key, value, { writeConcern: 2 });
+    expect(memoryCache.set).toHaveBeenCalledWith(key, value, {
+      writeConcern: 2,
+    });
     expect(diskCache.set).toHaveBeenCalledWith(key, value, { writeConcern: 1 });
-    expect(networkCache.set).toHaveBeenCalledWith(key, value, { writeConcern: 0 });
+    expect(networkCache.set).toHaveBeenCalledWith(key, value, {
+      writeConcern: 0,
+    });
   });
 
   test("should handle writeConcern with multiple options", async () => {
@@ -169,8 +179,14 @@ describe("KeyvNest", () => {
     const keyv = KeyvNest(memoryCache, diskCache);
     await keyv.set(key, value, { ttl: 1000, writeConcern: 2 });
 
-    expect(memoryCache.set).toHaveBeenCalledWith(key, value, { ttl: 1000, writeConcern: 2 });
-    expect(diskCache.set).toHaveBeenCalledWith(key, value, { ttl: 1000, writeConcern: 1 });
+    expect(memoryCache.set).toHaveBeenCalledWith(key, value, {
+      ttl: 1000,
+      writeConcern: 2,
+    });
+    expect(diskCache.set).toHaveBeenCalledWith(key, value, {
+      ttl: 1000,
+      writeConcern: 1,
+    });
   });
 
   test("should handle writeConcern = Infinity by awaiting all levels", async () => {
@@ -184,9 +200,14 @@ describe("KeyvNest", () => {
     const keyv = KeyvNest(memoryCache, diskCache, networkCache);
     await keyv.set(key, value, { writeConcern: Infinity });
 
-    expect(memoryCache.set).toHaveBeenCalledWith(key, value, { writeConcern: Infinity });
-    expect(diskCache.set).toHaveBeenCalledWith(key, value, { writeConcern: Infinity });
-    expect(networkCache.set).toHaveBeenCalledWith(key, value, { writeConcern: Infinity });
+    expect(memoryCache.set).toHaveBeenCalledWith(key, value, {
+      writeConcern: Infinity,
+    });
+    expect(diskCache.set).toHaveBeenCalledWith(key, value, {
+      writeConcern: Infinity,
+    });
+    expect(networkCache.set).toHaveBeenCalledWith(key, value, {
+      writeConcern: Infinity,
+    });
   });
 });
-
