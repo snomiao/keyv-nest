@@ -2,7 +2,12 @@
  * KeyvCRDT - CRDT wrapper for KeyvNest stores
  *
  * Provides conflict-free replication with customizable merge strategies.
- * Works with any KeyvNestStore without modifying the original implementation.
+ * Simple API: just use .get() and .set() like regular KeyvNest.
+ *
+ * Features:
+ * - Tombstone-based deletion (delete vs edit conflicts resolved by timestamp)
+ * - Per-field merge strategies
+ * - Custom merge functions
  *
  * @example
  * ```ts
@@ -10,7 +15,6 @@
  * import { KeyvCRDT } from 'keyv-nest/crdt';
  *
  * const store = KeyvNest(new Map(), mongoStore);
- *
  * const crdt = new KeyvCRDT(store, 'device-123', {
  *   name: 'lww',           // Last-Write-Wins
  *   highScore: 'max',      // Keep highest
@@ -18,8 +22,12 @@
  *   achievements: 'union', // Merge arrays
  * });
  *
- * crdt.update({ name: 'Alice', totalCoins: 100 });
- * await crdt.sync('user:123');
+ * // Simple API - just like KeyvNest
+ * await crdt.set('user:123', { name: 'Alice', totalCoins: 100 });
+ * const data = await crdt.get('user:123');
+ *
+ * // Delete with tombstone (can be overridden by later edits)
+ * await crdt.delete('user:123');
  * ```
  */
 
@@ -36,23 +44,24 @@ export type FieldMeta = {
 };
 
 /** Per-device counter values for 'counter' strategy */
-export type CounterValue = { [deviceId: string]: number };
+export type CounterValue = Record<string, number>;
 
 /** Internal CRDT field structure */
 export type CRDTField<T> = {
-  /** The value */
-  v: T;
-  /** Timestamp of last update */
-  t: number;
-  /** Device ID that made the update */
-  d: string;
-  /** Per-device counter (only for 'counter' strategy) */
-  c?: CounterValue;
+  v: T;              // value
+  t: number;         // timestamp
+  d: string;         // deviceId
+  c?: CounterValue;  // per-device counter (only for 'counter' strategy)
 };
 
-/** CRDT document structure */
+/** Reserved field name for tombstone */
+const TOMBSTONE_KEY = '_deleted' as const;
+
+/** CRDT document structure (includes tombstone field) */
 export type CRDTDocument<T extends object> = {
   [K in keyof T]?: CRDTField<T[K]>;
+} & {
+  [TOMBSTONE_KEY]?: CRDTField<boolean>;
 };
 
 /** Built-in merge strategy names */
@@ -75,35 +84,6 @@ export type MergeConfig<T extends object> = {
 };
 
 // ============================================================================
-// Built-in Merge Functions
-// ============================================================================
-
-const mergeStrategies = {
-  /** Last-Write-Wins: latest timestamp wins */
-  lww: <T>(local: T, remote: T, lm: FieldMeta, rm: FieldMeta): T => {
-    if (lm.timestamp > rm.timestamp) return local;
-    if (rm.timestamp > lm.timestamp) return remote;
-    // Tie-breaker: compare device IDs deterministically
-    return lm.deviceId > rm.deviceId ? local : remote;
-  },
-
-  /** Max: highest numeric value wins */
-  max: <T extends number>(local: T, remote: T): T => {
-    return Math.max(local, remote) as T;
-  },
-
-  /** Min: lowest numeric value wins */
-  min: <T extends number>(local: T, remote: T): T => {
-    return Math.min(local, remote) as T;
-  },
-
-  /** Union: merge arrays with deduplication */
-  union: <T extends unknown[]>(local: T, remote: T): T => {
-    return [...new Set([...local, ...remote])] as T;
-  },
-};
-
-// ============================================================================
 // KeyvCRDT Class
 // ============================================================================
 
@@ -114,8 +94,6 @@ const mergeStrategies = {
  * with customizable merge strategies per field.
  */
 export class KeyvCRDT<T extends object> {
-  private localState: CRDTDocument<T> = {};
-
   /**
    * Create a new KeyvCRDT instance.
    *
@@ -130,239 +108,264 @@ export class KeyvCRDT<T extends object> {
   ) {}
 
   /**
-   * Get the current data as a plain object (without CRDT metadata).
+   * Get data from store (merged, as plain object).
+   * Returns undefined if key doesn't exist or is deleted (tombstoned).
+   *
+   * @param key - The key to fetch
+   * @returns Plain object (without CRDT metadata), or undefined if not found/deleted
    */
-  getData(): Partial<T> {
+  async get(key: string): Promise<Partial<T> | undefined> {
+    const doc = await this.store.get(key);
+    if (!doc) return undefined;
+
+    const crdtDoc = doc as unknown as CRDTDocument<T>;
+
+    // Check tombstone - if deleted, return undefined
+    if (crdtDoc[TOMBSTONE_KEY]?.v === true) {
+      return undefined;
+    }
+
+    return this.toPlainObject(crdtDoc);
+  }
+
+  /**
+   * Set/update data in store (merges with existing data).
+   * Also clears tombstone if item was previously deleted.
+   *
+   * @param key - The key to store under
+   * @param updates - Partial object with fields to update
+   */
+  async set(key: string, updates: Partial<T>): Promise<void> {
+    const timestamp = Date.now();
+
+    // Create CRDT fields for updates
+    const newFields: CRDTDocument<T> = {};
+
+    // Clear tombstone (mark as not deleted)
+    newFields[TOMBSTONE_KEY] = {
+      v: false,
+      t: timestamp,
+      d: this.deviceId,
+    };
+
+    for (const field in updates) {
+      const strategy = this.mergeConfig[field as keyof T];
+      if (strategy === 'counter') {
+        (newFields as Record<string, CRDTField<unknown>>)[field] = {
+          v: updates[field as keyof T],
+          t: timestamp,
+          d: this.deviceId,
+          c: { [this.deviceId]: updates[field as keyof T] as number },
+        };
+      } else {
+        (newFields as Record<string, CRDTField<unknown>>)[field] = {
+          v: updates[field as keyof T],
+          t: timestamp,
+          d: this.deviceId,
+        };
+      }
+    }
+
+    // Merge with existing
+    const existing = await this.store.get(key);
+    const merged = existing
+      ? this.mergeDocuments(newFields, existing as unknown as CRDTDocument<T>)
+      : newFields;
+
+    await this.store.set(key, merged as unknown as CRDTDocument<T>);
+  }
+
+  /**
+   * Delete data from store using tombstone.
+   * Can be overridden by later edits (LWW between delete and edit).
+   *
+   * @param key - The key to delete
+   */
+  async delete(key: string): Promise<boolean> {
+    const timestamp = Date.now();
+    const existing = await this.store.get(key);
+
+    if (!existing) {
+      return false;
+    }
+
+    // Create tombstone
+    const tombstone: CRDTDocument<T> = {
+      ...(existing as unknown as CRDTDocument<T>),
+      [TOMBSTONE_KEY]: {
+        v: true,
+        t: timestamp,
+        d: this.deviceId,
+      },
+    };
+
+    await this.store.set(key, tombstone as unknown as CRDTDocument<T>);
+    return true;
+  }
+
+  /**
+   * Hard delete - permanently removes from store (no tombstone).
+   * Use with caution: other devices may recreate the data.
+   *
+   * @param key - The key to permanently delete
+   */
+  async hardDelete(key: string): Promise<boolean> {
+    return this.store.delete(key);
+  }
+
+  /**
+   * Check if key exists and is not deleted.
+   *
+   * @param key - The key to check
+   */
+  async has(key: string): Promise<boolean> {
+    const doc = await this.store.get(key);
+    if (!doc) return false;
+
+    const crdtDoc = doc as unknown as CRDTDocument<T>;
+    return crdtDoc[TOMBSTONE_KEY]?.v !== true;
+  }
+
+  /**
+   * Check if key is tombstoned (soft deleted).
+   *
+   * @param key - The key to check
+   */
+  async isDeleted(key: string): Promise<boolean> {
+    const doc = await this.store.get(key);
+    if (!doc) return false;
+
+    const crdtDoc = doc as unknown as CRDTDocument<T>;
+    return crdtDoc[TOMBSTONE_KEY]?.v === true;
+  }
+
+  /**
+   * Get raw CRDT document (with metadata).
+   * Useful for debugging or advanced use cases.
+   *
+   * @param key - The key to fetch
+   */
+  async getRaw(key: string): Promise<CRDTDocument<T> | undefined> {
+    const doc = await this.store.get(key);
+    return doc as unknown as CRDTDocument<T> | undefined;
+  }
+
+  // ==========================================================================
+  // Private helpers
+  // ==========================================================================
+
+  /** Convert CRDT document to plain object (excludes tombstone) */
+  private toPlainObject(doc: CRDTDocument<T>): Partial<T> {
     const result: Partial<T> = {};
-    for (const key in this.localState) {
-      const field = this.localState[key];
+    for (const key in doc) {
+      if (key === TOMBSTONE_KEY) continue; // Skip tombstone field
+      const field = (doc as Record<string, CRDTField<unknown>>)[key];
       if (field) {
         // For counter fields, sum all device values
         if (field.c) {
-          result[key] = Object.values(field.c).reduce((a, b) => a + b, 0) as T[typeof key];
+          (result as Record<string, unknown>)[key] = Object.values(field.c).reduce((a, b) => a + b, 0);
         } else {
-          result[key] = field.v;
+          (result as Record<string, unknown>)[key] = field.v;
         }
       }
     }
     return result;
   }
 
-  /**
-   * Get the raw CRDT document (with metadata).
-   * Useful for debugging or custom processing.
-   */
-  getRawData(): CRDTDocument<T> {
-    return { ...this.localState };
-  }
-
-  /**
-   * Update local state with new values.
-   * Changes are not persisted until sync() or push() is called.
-   *
-   * @param updates - Partial object with fields to update
-   */
-  update(updates: Partial<T>): void {
-    const timestamp = Date.now();
-
-    for (const key in updates) {
-      const strategy = this.mergeConfig[key];
-      const existing = this.localState[key];
-
-      if (strategy === 'counter') {
-        // Counter: track per-device values
-        const newValue = updates[key] as number;
-        const existingCounter = existing?.c || {};
-        this.localState[key] = {
-          v: newValue,
-          t: timestamp,
-          d: this.deviceId,
-          c: { ...existingCounter, [this.deviceId]: newValue },
-        } as CRDTField<T[typeof key]>;
-      } else {
-        // Other strategies: just store value with metadata
-        this.localState[key] = {
-          v: updates[key]!,
-          t: timestamp,
-          d: this.deviceId,
-        } as CRDTField<T[typeof key]>;
-      }
-    }
-  }
-
-  /**
-   * Merge a single field using the configured strategy.
-   */
-  private mergeField<K extends keyof T>(
+  /** Merge a single field using the configured strategy */
+  private mergeField<K extends keyof T | typeof TOMBSTONE_KEY>(
     key: K,
-    local: CRDTField<T[K]> | undefined,
-    remote: CRDTField<T[K]> | undefined
-  ): CRDTField<T[K]> | undefined {
+    local: CRDTField<unknown> | undefined,
+    remote: CRDTField<unknown> | undefined
+  ): CRDTField<unknown> | undefined {
     if (!local) return remote;
     if (!remote) return local;
 
-    const strategy = this.mergeConfig[key] || 'lww';
+    // Tombstone always uses LWW
+    if (key === TOMBSTONE_KEY) {
+      if (local.t > remote.t) return local;
+      if (remote.t > local.t) return remote;
+      return local.d > remote.d ? local : remote;
+    }
+
+    const strategy = this.mergeConfig[key as keyof T] || 'lww';
     const lm: FieldMeta = { timestamp: local.t, deviceId: local.d };
     const rm: FieldMeta = { timestamp: remote.t, deviceId: remote.d };
 
-    // Built-in strategies
     if (strategy === 'lww') {
-      const winner = mergeStrategies.lww(local.v, remote.v, lm, rm);
-      return winner === local.v ? local : remote;
+      if (local.t > remote.t) return local;
+      if (remote.t > local.t) return remote;
+      return local.d > remote.d ? local : remote;
     }
 
     if (strategy === 'max') {
-      const maxVal = mergeStrategies.max(local.v as number, remote.v as number);
-      return {
-        v: maxVal as T[K],
-        t: Math.max(local.t, remote.t),
-        d: local.t >= remote.t ? local.d : remote.d,
-      };
+      const val = Math.max(local.v as number, remote.v as number);
+      return { v: val, t: Math.max(local.t, remote.t), d: local.t >= remote.t ? local.d : remote.d };
     }
 
     if (strategy === 'min') {
-      const minVal = mergeStrategies.min(local.v as number, remote.v as number);
-      return {
-        v: minVal as T[K],
-        t: Math.max(local.t, remote.t),
-        d: local.t >= remote.t ? local.d : remote.d,
-      };
+      const val = Math.min(local.v as number, remote.v as number);
+      return { v: val, t: Math.max(local.t, remote.t), d: local.t >= remote.t ? local.d : remote.d };
     }
 
     if (strategy === 'counter') {
-      // Merge per-device counters, taking max for each device
-      const mergedCounter: CounterValue = { ...remote.c };
-      for (const deviceId in local.c) {
-        if (mergedCounter[deviceId] !== undefined) {
-          mergedCounter[deviceId] = Math.max(local.c[deviceId], mergedCounter[deviceId]);
-        } else {
-          mergedCounter[deviceId] = local.c[deviceId];
+      const merged: CounterValue = remote.c ? { ...remote.c } : {};
+      if (local.c) {
+        for (const did in local.c) {
+          merged[did] = Math.max(local.c[did], merged[did] ?? 0);
         }
       }
-      const sum = Object.values(mergedCounter).reduce((a, b) => a + b, 0);
-      return {
-        v: sum as T[K],
-        t: Math.max(local.t, remote.t),
-        d: local.t >= remote.t ? local.d : remote.d,
-        c: mergedCounter,
-      };
+      const sum = Object.values(merged).reduce((a, b) => a + b, 0);
+      return { v: sum, t: Math.max(local.t, remote.t), d: local.t >= remote.t ? local.d : remote.d, c: merged };
     }
 
     if (strategy === 'union') {
-      const merged = mergeStrategies.union(local.v as unknown[], remote.v as unknown[]);
-      return {
-        v: merged as T[K],
-        t: Math.max(local.t, remote.t),
-        d: local.t >= remote.t ? local.d : remote.d,
-      };
+      const merged = [...new Set([...(local.v as unknown[]), ...(remote.v as unknown[])])];
+      return { v: merged, t: Math.max(local.t, remote.t), d: local.t >= remote.t ? local.d : remote.d };
     }
 
-    // Custom merge function
     if (typeof strategy === 'function') {
-      const mergedVal = strategy(local.v, remote.v, lm, rm);
-      return {
-        v: mergedVal,
-        t: Math.max(local.t, remote.t),
-        d: local.t >= remote.t ? local.d : remote.d,
-      };
+      const val = strategy(local.v as T[keyof T], remote.v as T[keyof T], lm, rm);
+      return { v: val, t: Math.max(local.t, remote.t), d: local.t >= remote.t ? local.d : remote.d };
     }
 
-    // Fallback to LWW
     return local.t >= remote.t ? local : remote;
   }
 
-  /**
-   * Merge two CRDT documents.
-   */
-  private mergeDocuments(
-    local: CRDTDocument<T>,
-    remote: CRDTDocument<T>
-  ): CRDTDocument<T> {
+  /** Merge two CRDT documents */
+  private mergeDocuments(local: CRDTDocument<T>, remote: CRDTDocument<T>): CRDTDocument<T> {
     const result: CRDTDocument<T> = {};
     const allKeys = new Set([
       ...Object.keys(local),
       ...Object.keys(remote),
-    ]) as Set<keyof T>;
+    ]) as Set<keyof T | typeof TOMBSTONE_KEY>;
 
     for (const key of allKeys) {
-      result[key] = this.mergeField(key, local[key], remote[key]);
+      const merged = this.mergeField(
+        key,
+        local[key as keyof typeof local] as CRDTField<unknown> | undefined,
+        remote[key as keyof typeof remote] as CRDTField<unknown> | undefined
+      );
+      if (merged) {
+        (result as Record<string, unknown>)[key as string] = merged;
+      }
     }
     return result;
-  }
-
-  /**
-   * Push local state to the store, merging with existing remote state.
-   *
-   * @param key - The key to store data under
-   */
-  async push(key: string): Promise<void> {
-    const remote = await this.store.get(key);
-    const merged = remote
-      ? this.mergeDocuments(this.localState, remote as unknown as CRDTDocument<T>)
-      : this.localState;
-    await this.store.set(key, merged as unknown as CRDTDocument<T>);
-    this.localState = merged;
-  }
-
-  /**
-   * Pull remote state and merge into local state.
-   *
-   * @param key - The key to fetch data from
-   */
-  async pull(key: string): Promise<void> {
-    const remote = await this.store.get(key);
-    if (remote) {
-      this.localState = this.mergeDocuments(
-        this.localState,
-        remote as unknown as CRDTDocument<T>
-      );
-    }
-  }
-
-  /**
-   * Sync: pull remote changes, merge, then push.
-   * This is the recommended way to synchronize.
-   *
-   * @param key - The key to sync
-   */
-  async sync(key: string): Promise<void> {
-    await this.pull(key);
-    await this.push(key);
-  }
-
-  /**
-   * Clear local state. Does not affect the store.
-   */
-  clear(): void {
-    this.localState = {};
-  }
-
-  /**
-   * Load state from store without merging (replaces local state).
-   *
-   * @param key - The key to load from
-   */
-  async load(key: string): Promise<void> {
-    const remote = await this.store.get(key);
-    if (remote) {
-      this.localState = remote as unknown as CRDTDocument<T>;
-    }
   }
 }
 
 // ============================================================================
-// Factory function (alternative API)
+// Factory function
 // ============================================================================
 
 /**
- * Create a KeyvCRDT instance with a fluent API.
+ * Create a KeyvCRDT instance.
  *
  * @example
  * ```ts
- * const crdt = createCRDT(store, 'device-id', {
- *   score: 'max',
- *   coins: 'counter',
- * });
+ * const crdt = createCRDT(store, 'device-id', { score: 'max', coins: 'counter' });
+ * await crdt.set('user:1', { score: 100, coins: 50 });
+ * const data = await crdt.get('user:1');
  * ```
  */
 export function createCRDT<T extends object>(

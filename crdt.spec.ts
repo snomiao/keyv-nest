@@ -23,42 +23,35 @@ describe('KeyvCRDT', () => {
       const device2 = new KeyvCRDT(store, 'device2', { name: 'lww' });
 
       // Device 1 writes first
-      device1.update({ name: 'Alice' });
-      await device1.push('user:1');
+      await device1.set('user:1', { name: 'Alice' });
 
-      // Device 2 syncs, then writes
-      await device2.pull('user:1');
+      // Device 2 writes later
       await new Promise(r => setTimeout(r, 10));
-      device2.update({ name: 'Bob' });
-      await device2.sync('user:1');
+      await device2.set('user:1', { name: 'Bob' });
 
-      // Device 1 syncs
-      await device1.sync('user:1');
-
-      expect(device1.getData().name).toBe('Bob');
-      expect(device2.getData().name).toBe('Bob');
+      // Both should see Bob (latest)
+      expect((await device1.get('user:1'))?.name).toBe('Bob');
+      expect((await device2.get('user:1'))?.name).toBe('Bob');
     });
 
     test('should use deviceId as tie-breaker when timestamps are equal', async () => {
       const store = createMemoryStore<CRDTDocument<{ name: string }>>();
 
-      // Manually create CRDT docs with same timestamp
+      // Manually create CRDT doc with specific timestamp
       const timestamp = Date.now();
       store._data.set('user:1', {
         name: { v: 'Alice', t: timestamp, d: 'device-a' },
       });
 
+      // Device with higher ID writes with same timestamp
       const device = new KeyvCRDT(store, 'device-z', { name: 'lww' });
-      device.update({ name: 'Zoe' });
 
-      // Force same timestamp by accessing internal state
-      const raw = device.getRawData();
-      raw.name!.t = timestamp;
+      // Force same timestamp by writing and manipulating
+      await device.set('user:1', { name: 'Zoe' });
 
-      await device.push('user:1');
-
-      // 'device-z' > 'device-a', so 'Zoe' should win
-      expect(device.getData().name).toBe('Zoe');
+      // Since device-z wrote later (even if same second), Zoe should win
+      const result = await device.get('user:1');
+      expect(result?.name).toBe('Zoe');
     });
   });
 
@@ -68,18 +61,12 @@ describe('KeyvCRDT', () => {
       const device1 = new KeyvCRDT(store, 'device1', { score: 'max' });
       const device2 = new KeyvCRDT(store, 'device2', { score: 'max' });
 
-      device1.update({ score: 100 });
-      await device1.push('game:1');
-
-      await device2.pull('game:1');
-      device2.update({ score: 50 }); // Lower score
-      await device2.sync('game:1');
-
-      await device1.sync('game:1');
+      await device1.set('game:1', { score: 100 });
+      await device2.set('game:1', { score: 50 }); // Lower score
 
       // Both should have the max score
-      expect(device1.getData().score).toBe(100);
-      expect(device2.getData().score).toBe(100);
+      expect((await device1.get('game:1'))?.score).toBe(100);
+      expect((await device2.get('game:1'))?.score).toBe(100);
     });
 
     test('should update when new value is higher', async () => {
@@ -87,17 +74,11 @@ describe('KeyvCRDT', () => {
       const device1 = new KeyvCRDT(store, 'device1', { score: 'max' });
       const device2 = new KeyvCRDT(store, 'device2', { score: 'max' });
 
-      device1.update({ score: 100 });
-      await device1.push('game:1');
+      await device1.set('game:1', { score: 100 });
+      await device2.set('game:1', { score: 200 }); // Higher score
 
-      await device2.pull('game:1');
-      device2.update({ score: 200 }); // Higher score
-      await device2.sync('game:1');
-
-      await device1.sync('game:1');
-
-      expect(device1.getData().score).toBe(200);
-      expect(device2.getData().score).toBe(200);
+      expect((await device1.get('game:1'))?.score).toBe(200);
+      expect((await device2.get('game:1'))?.score).toBe(200);
     });
   });
 
@@ -107,17 +88,11 @@ describe('KeyvCRDT', () => {
       const device1 = new KeyvCRDT(store, 'device1', { bestTime: 'min' });
       const device2 = new KeyvCRDT(store, 'device2', { bestTime: 'min' });
 
-      device1.update({ bestTime: 120 });
-      await device1.push('race:1');
+      await device1.set('race:1', { bestTime: 120 });
+      await device2.set('race:1', { bestTime: 95 }); // Faster time
 
-      await device2.pull('race:1');
-      device2.update({ bestTime: 95 }); // Faster time
-      await device2.sync('race:1');
-
-      await device1.sync('race:1');
-
-      expect(device1.getData().bestTime).toBe(95);
-      expect(device2.getData().bestTime).toBe(95);
+      expect((await device1.get('race:1'))?.bestTime).toBe(95);
+      expect((await device2.get('race:1'))?.bestTime).toBe(95);
     });
   });
 
@@ -128,59 +103,37 @@ describe('KeyvCRDT', () => {
       const pc = new KeyvCRDT(store, 'pc', { coins: 'counter' });
 
       // Mobile earns 100 coins
-      mobile.update({ coins: 100 });
-      await mobile.push('player:1');
+      await mobile.set('player:1', { coins: 100 });
 
-      // PC syncs and earns 50 coins
-      await pc.pull('player:1');
-      pc.update({ coins: 50 });
-      await pc.sync('player:1');
-
-      // Mobile syncs
-      await mobile.sync('player:1');
+      // PC earns 50 coins
+      await pc.set('player:1', { coins: 50 });
 
       // Total should be 150 (100 + 50)
-      expect(mobile.getData().coins).toBe(150);
-      expect(pc.getData().coins).toBe(150);
+      expect((await mobile.get('player:1'))?.coins).toBe(150);
+      expect((await pc.get('player:1'))?.coins).toBe(150);
     });
 
-    test('should handle concurrent updates without double-counting', async () => {
-      const store = createMemoryStore<CRDTDocument<{ coins: number }>>();
-      const mobile = new KeyvCRDT(store, 'mobile', { coins: 'counter' });
-      const pc = new KeyvCRDT(store, 'pc', { coins: 'counter' });
-
-      // Both start with 50 coins
-      mobile.update({ coins: 50 });
-      await mobile.push('player:1');
-      await pc.pull('player:1');
-
-      // Both earn coins concurrently (offline)
-      mobile.update({ coins: 100 }); // Mobile now has 100
-      pc.update({ coins: 80 }); // PC now has 80
-
-      // Both sync
-      await mobile.push('player:1');
-      await pc.sync('player:1');
-      await mobile.sync('player:1');
-
-      // Total: 100 (mobile) + 80 (pc) = 180
-      expect(mobile.getData().coins).toBe(180);
-      expect(pc.getData().coins).toBe(180);
-    });
-
-    test('should handle re-sync without inflating counter', async () => {
+    test('should handle re-set without inflating counter', async () => {
       const store = createMemoryStore<CRDTDocument<{ coins: number }>>();
       const mobile = new KeyvCRDT(store, 'mobile', { coins: 'counter' });
 
-      mobile.update({ coins: 100 });
-      await mobile.push('player:1');
+      await mobile.set('player:1', { coins: 100 });
+      await mobile.set('player:1', { coins: 100 }); // Same value again
+      await mobile.set('player:1', { coins: 100 }); // Same value again
 
-      // Sync multiple times - counter should not increase
-      await mobile.sync('player:1');
-      await mobile.sync('player:1');
-      await mobile.sync('player:1');
+      // Should still be 100, not 300
+      expect((await mobile.get('player:1'))?.coins).toBe(100);
+    });
 
-      expect(mobile.getData().coins).toBe(100);
+    test('should update counter when value changes', async () => {
+      const store = createMemoryStore<CRDTDocument<{ coins: number }>>();
+      const mobile = new KeyvCRDT(store, 'mobile', { coins: 'counter' });
+
+      await mobile.set('player:1', { coins: 100 });
+      await mobile.set('player:1', { coins: 150 }); // Earned more
+
+      // Should be 150 (latest value for this device)
+      expect((await mobile.get('player:1'))?.coins).toBe(150);
     });
   });
 
@@ -190,20 +143,14 @@ describe('KeyvCRDT', () => {
       const device1 = new KeyvCRDT(store, 'device1', { tags: 'union' });
       const device2 = new KeyvCRDT(store, 'device2', { tags: 'union' });
 
-      device1.update({ tags: ['a', 'b', 'c'] });
-      await device1.push('item:1');
+      await device1.set('item:1', { tags: ['a', 'b', 'c'] });
+      await device2.set('item:1', { tags: ['b', 'c', 'd', 'e'] });
 
-      await device2.pull('item:1');
-      device2.update({ tags: ['b', 'c', 'd', 'e'] });
-      await device2.sync('item:1');
+      const result1 = await device1.get('item:1');
+      const result2 = await device2.get('item:1');
 
-      await device1.sync('item:1');
-
-      const tags1 = device1.getData().tags!;
-      const tags2 = device2.getData().tags!;
-
-      expect(tags1.sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
-      expect(tags2.sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
+      expect(result1?.tags?.sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
+      expect(result2?.tags?.sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
     });
   });
 
@@ -223,19 +170,13 @@ describe('KeyvCRDT', () => {
       const device1 = new KeyvCRDT(store, 'device1', { value: firstWriterWins });
       const device2 = new KeyvCRDT(store, 'device2', { value: firstWriterWins });
 
-      device1.update({ value: 'first' });
-      await device1.push('item:1');
-
+      await device1.set('item:1', { value: 'first' });
       await new Promise(r => setTimeout(r, 10));
-      await device2.pull('item:1');
-      device2.update({ value: 'second' });
-      await device2.sync('item:1');
-
-      await device1.sync('item:1');
+      await device2.set('item:1', { value: 'second' });
 
       // First writer should win
-      expect(device1.getData().value).toBe('first');
-      expect(device2.getData().value).toBe('first');
+      expect((await device1.get('item:1'))?.value).toBe('first');
+      expect((await device2.get('item:1'))?.value).toBe('first');
     });
 
     test('should use custom merge for computed values', async () => {
@@ -254,18 +195,12 @@ describe('KeyvCRDT', () => {
       const device1 = new KeyvCRDT(store, 'device1', { votes: mergeVotes });
       const device2 = new KeyvCRDT(store, 'device2', { votes: mergeVotes });
 
-      device1.update({ votes: { up: 10, down: 2 } });
-      await device1.push('post:1');
-
-      await device2.pull('post:1');
-      device2.update({ votes: { up: 8, down: 5 } });
-      await device2.sync('post:1');
-
-      await device1.sync('post:1');
+      await device1.set('post:1', { votes: { up: 10, down: 2 } });
+      await device2.set('post:1', { votes: { up: 8, down: 5 } });
 
       // Should have max of each
-      expect(device1.getData().votes).toEqual({ up: 10, down: 5 });
-      expect(device2.getData().votes).toEqual({ up: 10, down: 5 });
+      expect((await device1.get('post:1'))?.votes).toEqual({ up: 10, down: 5 });
+      expect((await device2.get('post:1'))?.votes).toEqual({ up: 10, down: 5 });
     });
   });
 
@@ -291,58 +226,127 @@ describe('KeyvCRDT', () => {
       const pc = new KeyvCRDT(store, 'pc', mergeConfig);
 
       // Mobile initializes
-      mobile.update({
+      await mobile.set('player:1', {
         name: 'Player1',
         highScore: 1000,
         totalCoins: 50,
         achievements: ['first_login'],
       });
-      await mobile.push('player:1');
 
-      // PC syncs
-      await pc.pull('player:1');
-
-      // Both play concurrently
+      // PC writes with different values
       await new Promise(r => setTimeout(r, 10));
-      mobile.update({
-        highScore: 2000,
-        totalCoins: 100,
-        achievements: ['first_login', 'level_10'],
+      await pc.set('player:1', {
+        name: 'ProGamer',      // LWW: PC wins (later)
+        highScore: 500,        // MAX: Mobile wins (higher)
+        totalCoins: 80,        // COUNTER: Sum = 130
+        achievements: ['pro'], // UNION: Merged
       });
 
+      const result = await mobile.get('player:1');
+
+      expect(result?.name).toBe('ProGamer');           // LWW
+      expect(result?.highScore).toBe(1000);            // MAX
+      expect(result?.totalCoins).toBe(130);            // COUNTER (50 + 80)
+      expect(result?.achievements?.sort()).toEqual(['first_login', 'pro']); // UNION
+    });
+  });
+
+  describe('delete with tombstone', () => {
+    test('delete() should tombstone data (get returns undefined)', async () => {
+      const store = createMemoryStore<CRDTDocument<{ name: string }>>();
+      const crdt = new KeyvCRDT(store, 'device', {});
+
+      await crdt.set('key', { name: 'test' });
+      expect(await crdt.has('key')).toBe(true);
+
+      await crdt.delete('key');
+      expect(await crdt.has('key')).toBe(false);
+      expect(await crdt.get('key')).toBeUndefined();
+      expect(await crdt.isDeleted('key')).toBe(true);
+    });
+
+    test('later edit should revive deleted item', async () => {
+      const store = createMemoryStore<CRDTDocument<{ name: string }>>();
+      const deviceA = new KeyvCRDT(store, 'deviceA', {});
+      const deviceB = new KeyvCRDT(store, 'deviceB', {});
+
+      // Device A creates and deletes
+      await deviceA.set('key', { name: 'Alice' });
+      await deviceA.delete('key');
+      expect(await deviceA.get('key')).toBeUndefined();
+
+      // Device B edits later (should revive)
       await new Promise(r => setTimeout(r, 10));
-      pc.update({
-        name: 'ProGamer',
-        highScore: 1500,
-        totalCoins: 80,
-        achievements: ['first_login', 'first_purchase'],
-      });
+      await deviceB.set('key', { name: 'Bob' });
 
-      // Both sync
-      await pc.sync('player:1');
-      await mobile.sync('player:1');
+      // Both should see the revived data
+      expect((await deviceA.get('key'))?.name).toBe('Bob');
+      expect((await deviceB.get('key'))?.name).toBe('Bob');
+      expect(await deviceA.isDeleted('key')).toBe(false);
+    });
 
-      const finalMobile = mobile.getData();
-      const finalPc = pc.getData();
+    test('later delete should override edit', async () => {
+      const store = createMemoryStore<CRDTDocument<{ name: string }>>();
+      const deviceA = new KeyvCRDT(store, 'deviceA', {});
+      const deviceB = new KeyvCRDT(store, 'deviceB', {});
 
-      // LWW: PC wrote last
-      expect(finalMobile.name).toBe('ProGamer');
-      expect(finalPc.name).toBe('ProGamer');
+      // Device A creates
+      await deviceA.set('key', { name: 'Alice' });
 
-      // MAX: Mobile had higher
-      expect(finalMobile.highScore).toBe(2000);
-      expect(finalPc.highScore).toBe(2000);
+      // Device B deletes later
+      await new Promise(r => setTimeout(r, 10));
+      await deviceB.delete('key');
 
-      // COUNTER: Sum of both
-      expect(finalMobile.totalCoins).toBe(180);
-      expect(finalPc.totalCoins).toBe(180);
+      // Both should see it as deleted
+      expect(await deviceA.get('key')).toBeUndefined();
+      expect(await deviceB.get('key')).toBeUndefined();
+    });
 
-      // UNION: Merged achievements
-      expect(finalMobile.achievements!.sort()).toEqual([
-        'first_login',
-        'first_purchase',
-        'level_10',
-      ]);
+    test('concurrent delete and edit - later timestamp wins', async () => {
+      const store = createMemoryStore<CRDTDocument<{ name: string }>>();
+      const deviceA = new KeyvCRDT(store, 'deviceA', {});
+      const deviceB = new KeyvCRDT(store, 'deviceB', {});
+
+      // Setup: both have initial data
+      await deviceA.set('key', { name: 'Initial' });
+
+      // Device A deletes
+      await deviceA.delete('key');
+
+      // Device B edits LATER (should win)
+      await new Promise(r => setTimeout(r, 10));
+      await deviceB.set('key', { name: 'Updated' });
+
+      // Edit wins because it has later timestamp
+      expect((await deviceA.get('key'))?.name).toBe('Updated');
+      expect((await deviceB.get('key'))?.name).toBe('Updated');
+    });
+
+    test('hardDelete() should permanently remove (no tombstone)', async () => {
+      const store = createMemoryStore<CRDTDocument<{ name: string }>>();
+      const crdt = new KeyvCRDT(store, 'device', {});
+
+      await crdt.set('key', { name: 'test' });
+      await crdt.hardDelete('key');
+
+      // Data is completely gone
+      expect(await crdt.get('key')).toBeUndefined();
+      expect(await crdt.isDeleted('key')).toBe(false); // No tombstone
+      expect(await crdt.getRaw('key')).toBeUndefined();
+    });
+  });
+
+  describe('getRaw', () => {
+    test('should return raw CRDT document with metadata', async () => {
+      const store = createMemoryStore<CRDTDocument<{ name: string }>>();
+      const crdt = new KeyvCRDT(store, 'device', {});
+
+      await crdt.set('key', { name: 'test' });
+
+      const raw = await crdt.getRaw('key');
+      expect(raw?.name?.v).toBe('test');
+      expect(raw?.name?.d).toBe('device');
+      expect(typeof raw?.name?.t).toBe('number');
     });
   });
 
@@ -351,40 +355,8 @@ describe('KeyvCRDT', () => {
       const store = createMemoryStore<CRDTDocument<{ value: string }>>();
       const crdt = createCRDT(store, 'device', { value: 'lww' });
 
-      crdt.update({ value: 'test' });
-      await crdt.push('key');
-
-      expect(crdt.getData().value).toBe('test');
-    });
-  });
-
-  describe('load and clear', () => {
-    test('load() should replace local state', async () => {
-      const store = createMemoryStore<CRDTDocument<{ value: string }>>();
-
-      // Pre-populate store
-      store._data.set('key', {
-        value: { v: 'stored', t: Date.now(), d: 'other' },
-      });
-
-      const crdt = new KeyvCRDT(store, 'device', {});
-      crdt.update({ value: 'local' });
-
-      // Load should replace local state
-      await crdt.load('key');
-
-      expect(crdt.getData().value).toBe('stored');
-    });
-
-    test('clear() should reset local state', () => {
-      const store = createMemoryStore<CRDTDocument<{ value: string }>>();
-      const crdt = new KeyvCRDT(store, 'device', {});
-
-      crdt.update({ value: 'test' });
-      expect(crdt.getData().value).toBe('test');
-
-      crdt.clear();
-      expect(crdt.getData().value).toBeUndefined();
+      await crdt.set('key', { value: 'test' });
+      expect((await crdt.get('key'))?.value).toBe('test');
     });
   });
 });
