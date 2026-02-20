@@ -44,15 +44,15 @@
     }
   },
   "main": "./dist/index.js",
-  "module": "index.ts",
+  "module": "src/index.ts",
   "types": "./dist/index.d.ts",
   "files": [
-    "*.ts",
+    "src",
     "dist"
   ],
   "scripts": {
     "build": "bun build:type && bun build:js && bun build:umd",
-    "build:js": "bun build index.ts crdt.ts --outdir=dist",
+    "build:js": "bun build src/index.ts src/crdt.ts --outdir=dist",
     "build:type": "bunx --bun tsc -d --noEmit false --emitDeclarationOnly --outDir dist",
     "build:umd": "bunx rollup dist/index.js --file dist/index.umd.js --format umd --name {}",
     "prerelease": "bun run build && bun run test",
