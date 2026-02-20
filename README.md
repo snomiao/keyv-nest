@@ -195,6 +195,17 @@ const nestedCache = KeyvNest(memoryCache, diskCache);
 
 Contributions are welcome! Please open an issue or submit a pull request for any feature requests, bug reports, or improvements.
 
+## See Also
+
+Other Keyv storage adapters by the same author:
+
+- [keyv-github](https://github.com/snomiao/keyv-github) — GitHub repository adapter; each key is a file, commits are writes
+- [keyv-sqlite](https://github.com/snomiao/keyv-sqlite) — SQLite storage adapter
+- [keyv-mongodb-store](https://github.com/snomiao/keyv-mongodb-store) — MongoDB storage adapter
+- [keyv-nedb-store](https://github.com/snomiao/keyv-nedb-store) — NeDB embedded file-based adapter
+- [keyv-dir-store](https://github.com/snomiao/keyv-dir-store) — file-per-key directory adapter with TTL via mtime
+- [keyv-cache-proxy](https://github.com/snomiao/keyv-cache-proxy) — transparent caching proxy that wraps any object
+
 ## License
 
 This module is open-source and licensed under the MIT License. For more details, see the [LICENSE](LICENSE) file.
