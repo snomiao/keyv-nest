@@ -17,7 +17,11 @@
     "store",
     "lru",
     "performance",
-    "write-concern"
+    "write-concern",
+    "crdt",
+    "conflict-free",
+    "sync",
+    "offline-first"
   ],
   "homepage": "https://github.com/snomiao/keyv-nest#readme",
   "bugs": {
@@ -30,8 +34,14 @@
   "license": "MIT",
   "author": "snomiao <snomiao@gmail.com>",
   "exports": {
-    "import": "./dist/index.js",
-    "types": "./dist/index.d.ts"
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./crdt": {
+      "import": "./dist/crdt.js",
+      "types": "./dist/crdt.d.ts"
+    }
   },
   "main": "./dist/index.js",
   "module": "index.ts",
@@ -42,7 +52,7 @@
   ],
   "scripts": {
     "build": "bun build:type && bun build:js && bun build:umd",
-    "build:js": "bun build . --outdir=dist",
+    "build:js": "bun build index.ts crdt.ts --outdir=dist",
     "build:type": "bunx --bun tsc -d --noEmit false --emitDeclarationOnly --outDir dist",
     "build:umd": "bunx rollup dist/index.js --file dist/index.umd.js --format umd --name {}",
     "prerelease": "bun run build && bun run test",
@@ -86,6 +96,7 @@
     "undici-types": "^5.26.5"
   },
   "devDependencies": {
+    "@automerge/automerge": "^3.2.4",
     "@types/bun": "latest",
     "@types/jest": "^29.5.12",
     "husky": "^9.1.7",
@@ -95,7 +106,8 @@
     "oxlint-tsgolint": "^0.8.5",
     "semantic-release": "^24.2.5",
     "tiny-lru": "^11.2.11",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "yjs": "^13.6.29"
   },
   "type": "module"
 }
