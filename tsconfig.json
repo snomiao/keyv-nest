@@ -1,6 +1,8 @@
 {
   "exclude": ["tmp", "node_modules", "dist"],
   "compilerOptions": {
+    "rootDir": "src",
+    "types": ["bun", "istanbul-lib-coverage", "istanbul-lib-report", "istanbul-reports", "jest", "node", "normalize-package-data", "react", "stack-utils", "yargs", "yargs-parser"],
     // Enable latest features
     "lib": ["ESNext", "DOM"],
     "target": "ESNext",
