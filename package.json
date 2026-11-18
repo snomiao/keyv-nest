@@ -45,7 +45,7 @@
   "scripts": {
     "build": "bun build:type && bun build:js && bun build:umd",
     "build:js": "bun build src/index.ts --outdir=dist",
-    "build:type": "bunx --bun tsc -d --noEmit false --emitDeclarationOnly --outDir dist",
+    "build:type": "tsrs -d --noEmit false --emitDeclarationOnly --outDir dist",
     "build:umd": "bunx rollup dist/index.js --file dist/index.umd.js --format umd --name {}",
     "prerelease": "bun run build && bun run test",
     "release": "bunx standard-version && git push --follow-tags && npm publish",
@@ -97,7 +97,7 @@
     "oxlint-tsgolint": "^0.8.5",
     "semantic-release": "^24.2.5",
     "tiny-lru": "^11.2.11",
-    "typescript": "^5.5.4"
+    "tsrs": "0.25.0-ts7.1.0-beta"
   },
   "type": "module"
 }

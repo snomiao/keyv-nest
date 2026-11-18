@@ -1,6 +1,8 @@
 {
   "exclude": ["tmp", "node_modules", "dist"],
   "compilerOptions": {
+    "rootDir": "src",
+    "types": ["bun", "node", "jest"],
     // Enable latest features
     "lib": ["ESNext", "DOM"],
     "target": "ESNext",
